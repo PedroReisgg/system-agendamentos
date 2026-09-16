@@ -1,5 +1,6 @@
 node_modules/
 frontend/dist/
 .env
+.env.example
 backend/.env
 .netlify/

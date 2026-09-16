@@ -53,7 +53,9 @@ create policy "gestor le profissionais da empresa" on public.profissionais for s
 create policy "profissional le proprio perfil" on public.profissionais for select using (public.eh_profissional_atual(id));
 
 drop policy if exists "publico le servicos ativos" on public.servicos;
+drop policy if exists "equipe cria servicos" on public.servicos;
 create policy "publico le servicos ativos" on public.servicos for select using (ativo = true);
+create policy "equipe cria servicos" on public.servicos for insert with check (public.eh_equipe_empresa(empresa_id));
 
 drop policy if exists "publico le relacoes de servicos" on public.profissionais_servicos;
 drop policy if exists "profissional gerencia proprios servicos" on public.profissionais_servicos;
