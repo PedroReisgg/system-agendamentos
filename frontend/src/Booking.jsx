@@ -1,100 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React,{useEffect,useMemo,useState}from'react';
+import './booking-extra.css';
+const chave=data=>`${data.getFullYear()}-${String(data.getMonth()+1).padStart(2,'0')}-${String(data.getDate()).padStart(2,'0')}`;
+const dinheiro=valor=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(valor));
 
-const dateKey = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-const money = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value));
-
-export default function Booking({ supabase, tenant, services, user, onHome, onAccount, onLogout }) {
-  const [step, setStep] = useState(1);
-  const [date, setDate] = useState(dateKey(new Date()));
-  const [service, setService] = useState(null);
-  const [professionals, setProfessionals] = useState([]);
-  const [professional, setProfessional] = useState(null);
-  const [slots, setSlots] = useState([]);
-  const [slot, setSlot] = useState(null);
-  const [notice, setNotice] = useState('');
-  const [loading, setLoading] = useState(false);
-  const days = useMemo(() => Array.from({ length: 14 }, (_, index) => {
-    const day = new Date();
-    day.setHours(12, 0, 0, 0);
-    day.setDate(day.getDate() + index);
-    return day;
-  }), []);
-
-  useEffect(() => {
-    if (!service || !supabase) return;
-    let active = true;
-    setLoading(true);
-    const dayOfWeek = new Date(`${date}T12:00:00`).getDay();
-    supabase
-      .from('professionals')
-      .select('id, bio, users!professionals_user_id_fkey(name), professional_services!inner(service_id), working_hours(day_of_week)')
-      .eq('active', true)
-      .eq('professional_services.service_id', service.id)
-      .then(({ data, error }) => {
-        if (!active) return;
-        if (error) setNotice(error.message);
-        else setProfessionals((data || [])
-          .filter((item) => item.working_hours?.some((hours) => hours.day_of_week === dayOfWeek))
-          .map((item) => ({ id: item.id, name: item.users?.name || 'Profissional', bio: item.bio || 'Especialista Casa Âmbar' })));
-        setLoading(false);
-      });
-    setProfessional(null);
-    setSlot(null);
-    return () => { active = false; };
-  }, [date, service, supabase]);
-
-  useEffect(() => {
-    if (!professional || !service || !supabase) return;
-    let active = true;
-    setLoading(true);
-    supabase.rpc('available_slots', {
-      p_professional_id: professional.id,
-      p_service_id: service.id,
-      p_date: date
-    }).then(({ data, error }) => {
-      if (!active) return;
-      if (error) setNotice(error.message);
-      else setSlots((data || []).map((item) => String(item.start_time).slice(0, 5)));
-      setLoading(false);
-    });
-    setSlot(null);
-    return () => { active = false; };
-  }, [date, professional, service, supabase]);
-
-  async function confirm() {
-    if (!user) { onAccount(); return; }
-    setLoading(true);
-    setNotice('');
-    const { error } = await supabase.rpc('reserve_appointment', {
-      p_professional_id: professional.id,
-      p_service_id: service.id,
-      p_date: date,
-      p_start_time: slot
-    });
-    setLoading(false);
-    if (error) setNotice(error.message);
-    else setNotice('Solicitação enviada. O estabelecimento confirmará seu horário.');
-  }
-
-  const config = tenant.config_json || {};
-  return <div className="booking-shell">
-    <header className="booking-header">
-      <button className="brand" onClick={onHome}>{config.logoText || tenant.name}</button>
-      <div className="booking-header-actions">{user ? <button className="account" onClick={onLogout}>Sair</button> : <button className="account" onClick={onAccount}>Minha conta</button>}</div>
-    </header>
-    <main className="booking-main">
-      <p className="eyebrow">RESERVA ONLINE</p><h1>Seu próximo ritual começa aqui.</h1>
-      <ol className="steps">{['Data', 'Serviço', 'Profissional', 'Horário'].map((label, index) => <li key={label} className={step === index + 1 ? 'current' : step > index + 1 ? 'done' : ''}><span>{index + 1}</span>{label}</li>)}</ol>
-      {step === 1 && <section className="booking-card"><h2>Quando você quer vir?</h2><div className="date-strip">{days.map((day) => { const value = dateKey(day); return <button key={value} className={date === value ? 'selected' : ''} onClick={() => setDate(value)}><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'short' }).format(day)}</small><strong>{day.getDate()}</strong><small>{new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(day)}</small></button>; })}</div><button className="primary" onClick={() => setStep(2)}>Continuar</button></section>}
-      {step === 2 && <section className="booking-card"><button className="back" onClick={() => setStep(1)}>Voltar</button><h2>Qual serviço?</h2><div className="service-list">{services.map((item) => <button key={item.id} className={service?.id === item.id ? 'selected' : ''} onClick={() => setService(item)}><span><strong>{item.name}</strong><small>{item.description}</small></span><b>{money(item.price)} · {item.duration_minutes} min</b></button>)}</div><button className="primary" disabled={!service} onClick={() => setStep(3)}>Escolher profissional</button></section>}
-      {step === 3 && <section className="booking-card"><button className="back" onClick={() => setStep(2)}>Voltar</button><h2>Escolha o profissional</h2>{loading ? <p className="empty">Carregando profissionais...</p> : <div className="professional-grid">{professionals.map((item) => <button key={item.id} className={professional?.id === item.id ? 'selected' : ''} onClick={() => setProfessional(item)}><span className="initials">{item.name.slice(0, 2)}</span><strong>{item.name}</strong><small>{item.bio}</small></button>)}</div>}{!loading && !professionals.length && <p className="empty">Não há profissionais disponíveis nesta data.</p>}<button className="primary" disabled={!professional} onClick={() => setStep(4)}>Ver horários</button></section>}
-      {step === 4 && <section className="booking-card"><button className="back" onClick={() => setStep(3)}>Voltar</button><h2>Horários disponíveis</h2>{loading ? <p className="empty">Calculando horários...</p> : <div className="slot-grid">{slots.map((value) => <button key={value} className={slot === value ? 'selected' : ''} onClick={() => setSlot(value)}>{value}</button>)}</div>}{!loading && !slots.length && <p className="empty">Sem horários disponíveis para este dia.</p>}<button className="primary" disabled={!slot || loading} onClick={confirm}>Confirmar horário</button></section>}
-      {notice && <p className="notice" role="status">{notice}</p>}
-    </main>
-  </div>;
+export default function Booking({supabase,tenant,services,user,onHome,onAccount,onLogout}){
+ const[etapa,setEtapa]=useState(1),[data,setData]=useState(chave(new Date())),[profissionais,setProfissionais]=useState([]),[profissional,setProfissional]=useState(null),[servico,setServico]=useState(null),[horarios,setHorarios]=useState([]),[horario,setHorario]=useState(null),[descricao,setDescricao]=useState(''),[aviso,setAviso]=useState(''),[carregando,setCarregando]=useState(false),[confirmacao,setConfirmacao]=useState(false);
+ const dias=useMemo(()=>Array.from({length:14},(_,i)=>{const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+i);return d}),[]);
+ const servicosProfissional=useMemo(()=>{if(!profissional)return[];const ids=profissional.servicos||[];return services.filter(s=>ids.includes(s.id))},[profissional,services]);
+ useEffect(()=>{if(!supabase)return;let ativo=true;setCarregando(true);const diaSemana=new Date(`${data}T12:00:00`).getDay();supabase.from('profissionais').select('id,biografia,usuarios(nome),profissionais_servicos(servico_id),horarios_trabalho(dia_semana)').eq('ativo',true).then(({data:itens,error})=>{if(!ativo)return;if(error)setAviso(error.message);else setProfissionais((itens||[]).filter(p=>p.horarios_trabalho?.some(h=>h.dia_semana===diaSemana)).map(p=>({id:p.id,nome:p.usuarios?.nome||'Profissional',biografia:p.biografia||'Especialista Casa Âmbar',servicos:(p.profissionais_servicos||[]).map(r=>r.servico_id)})));setCarregando(false)});setProfissional(null);setServico(null);setHorario(null);return()=>{ativo=false}},[data,supabase]);
+ useEffect(()=>{if(!profissional||!servico||!supabase)return;let ativo=true;setCarregando(true);supabase.rpc('horarios_disponiveis',{p_profissional_id:profissional.id,p_servico_id:servico.id,p_data:data}).then(({data:itens,error})=>{if(!ativo)return;if(error)setAviso(error.message);else setHorarios((itens||[]).map(i=>String(i.hora_inicio).slice(0,5)));setCarregando(false)});setHorario(null);return()=>{ativo=false}},[profissional,servico,data,supabase]);
+ async function reservar(){if(!user){setConfirmacao(false);onAccount();return}setCarregando(true);const{error}=await supabase.rpc('reservar_agendamento',{p_profissional_id:profissional.id,p_servico_id:servico.id,p_data:data,p_hora_inicio:horario,p_observacao:descricao});setCarregando(false);setConfirmacao(false);setAviso(error?error.message:'Agendamento realizado com sucesso.');if(!error)setEtapa(1)}
+ const config=tenant.config_json||{};return <div className="booking-shell"><header className="booking-header"><button className="brand" onClick={onHome}>{config.logoText||tenant.name}</button>{user?<button className="account" onClick={onLogout}>Sair</button>:<button className="account" onClick={onAccount}>Minha conta</button>}</header><main className="booking-main"><p className="eyebrow">RESERVA ONLINE</p><h1>Seu próximo ritual começa aqui.</h1><ol className="steps">{['Data','Profissional','Serviço','Horário'].map((nome,i)=><li key={nome} className={etapa===i+1?'current':etapa>i+1?'done':''}><span>{i+1}</span>{nome}</li>)}</ol>{etapa===1&&<section className="booking-card"><h2>Quando você quer vir?</h2><div className="date-strip">{dias.map(d=>{const valor=chave(d);return <button key={valor} className={data===valor?'selected':''} onClick={()=>setData(valor)}><small>{new Intl.DateTimeFormat('pt-BR',{weekday:'short'}).format(d)}</small><strong>{d.getDate()}</strong><small>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(d)}</small></button>})}</div><button className="primary" onClick={()=>setEtapa(2)}>Escolher profissional</button></section>}{etapa===2&&<section className="booking-card"><button className="back" onClick={()=>setEtapa(1)}>Voltar</button><h2>Quem vai cuidar de você?</h2>{carregando?<p className="empty">Carregando profissionais...</p>:<div className="professional-grid">{profissionais.map(p=><button key={p.id} className={profissional?.id===p.id?'selected':''} onClick={()=>setProfissional(p)}><span className="initials">{p.nome.slice(0,2)}</span><strong>{p.nome}</strong><small>{p.biografia}</small></button>)}</div>}{!carregando&&!profissionais.length&&<p className="empty">Não há profissionais disponíveis nesta data.</p>}<button className="primary" disabled={!profissional} onClick={()=>setEtapa(3)}>Escolher serviço</button></section>}{etapa===3&&<section className="booking-card"><button className="back" onClick={()=>setEtapa(2)}>Voltar</button><h2>O que vamos fazer?</h2><div className="service-list">{servicosProfissional.map(s=><button key={s.id} className={servico?.id===s.id?'selected':''} onClick={()=>setServico(s)}><span><strong>{s.name}</strong><small>{s.description}</small></span><b>{dinheiro(s.price)} · {s.duration_minutes} min</b></button>)}</div>{!servicosProfissional.length&&<p className="empty">Este profissional ainda não adicionou serviços ao perfil.</p>}<button className="primary" disabled={!servico} onClick={()=>setEtapa(4)}>Ver horários</button></section>}{etapa===4&&<section className="booking-card"><button className="back" onClick={()=>setEtapa(3)}>Voltar</button><h2>Qual horário funciona melhor?</h2>{carregando?<p className="empty">Calculando horários...</p>:<div className="slot-grid">{horarios.map(h=><button key={h} className={horario===h?'selected':''} onClick={()=>setHorario(h)}>{h}</button>)}</div>}{!carregando&&!horarios.length&&<p className="empty">Sem horários disponíveis para este dia.</p>}<label className="booking-note">Conte ao profissional o que você deseja<textarea value={descricao} onChange={e=>setDescricao(e.target.value)} maxLength="300" placeholder="Ex.: corte mais baixo nas laterais."/></label><button className="primary" disabled={!horario||carregando} onClick={()=>setConfirmacao(true)}>Revisar agendamento</button></section>}{aviso&&<p className="notice" role="status">{aviso}</p>}</main>{confirmacao&&<div className="booking-confirm"><section role="dialog" aria-modal="true" aria-labelledby="titulo-confirmacao"><button className="close" onClick={()=>setConfirmacao(false)} aria-label="Fechar">×</button><p className="eyebrow">CONFIRME SEUS DADOS</p><h2 id="titulo-confirmacao">Está tudo certo?</h2><dl><div><dt>Dia</dt><dd>{new Intl.DateTimeFormat('pt-BR',{dateStyle:'full'}).format(new Date(`${data}T12:00:00`))}</dd></div><div><dt>Profissional</dt><dd>{profissional?.nome}</dd></div><div><dt>Serviço</dt><dd>{servico?.name}</dd></div><div><dt>Horário</dt><dd>{horario}</dd></div></dl><button className="primary" disabled={carregando} onClick={reservar}>{carregando?'Confirmando...':'Confirmar agendamento'}</button></section></div>}</div>
 }
