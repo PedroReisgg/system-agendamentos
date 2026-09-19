@@ -6,6 +6,7 @@ import'./team-services-extra.css';
 import'./team-schedule-extra.css';
 import'./team-polish.css';
 import'./team-home.css';
+import'./team-fixes.css';
 
 const hoje=()=>new Date().toISOString().slice(0,10);
 const hora=v=>String(v||'').slice(0,5);

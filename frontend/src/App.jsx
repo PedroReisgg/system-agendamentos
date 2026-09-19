@@ -13,7 +13,7 @@ const rota=()=>location.hash==='#agendar'?'agendar':location.hash.startsWith('#d
 
 export default function App(){
  const slug=new URLSearchParams(location.search).get('tenant')||'casa-ambar';
- const[page,setPage]=useState(rota),[empresa,setEmpresa]=useState(padrao),[servicos,setServicos]=useState([]),[usuario,setUsuario]=useState(null),[modal,setModal]=useState(false),[mode,setMode]=useState('login'),[busy,setBusy]=useState(false),[erro,setErro]=useState(''),[sucesso,setSucesso]=useState(''),[pronto,setPronto]=useState(false);
+ const[page,setPage]=useState(rota),[empresa,setEmpresa]=useState(padrao),[servicos,setServicos]=useState([]),[usuario,setUsuario]=useState(null),[modal,setModal]=useState(false),[mode,setMode]=useState('login'),[busy,setBusy]=useState(false),[erro,setErro]=useState(''),[sucesso,setSucesso]=useState('');
  const ir=(p,h='')=>{history.replaceState(null,'',`${location.pathname}${location.search}${h}`);setPage(p)};
  const irPerfil=()=>ir('dashboard','#dashboard-perfil');
  async function carregarPerfil(id){
@@ -23,7 +23,7 @@ export default function App(){
   setUsuario(data||null);return data||null;
  }
  useEffect(()=>{
-  if(!supabase){setPronto(true);return}
+  if(!supabase)return;
   let ativo=true;
   const iniciar=async()=>{
    try{
@@ -37,13 +37,12 @@ export default function App(){
     setServicos(servicosDb||[]);
     if(session?.user)await carregarPerfil(session.user.id);
    }catch(e){if(ativo)setErro('Não foi possível carregar os dados salvos. Atualize a página para tentar novamente.')}
-   finally{if(ativo)setPronto(true)}
+   finally{}
   };
   iniciar();
   const{data:{subscription}}=supabase.auth.onAuthStateChange(async(event,session)=>{
    if(!ativo||event==='INITIAL_SESSION')return;
    if(session?.user)await carregarPerfil(session.user.id);else setUsuario(null);
-   if(ativo)setPronto(true);
   });
   return()=>{ativo=false;subscription?.unsubscribe()};
  },[slug]);
@@ -67,7 +66,6 @@ export default function App(){
  async function sair(){await supabase?.auth.signOut();setUsuario(null);ir('inicio')}
  const abrir=(m='login')=>{setErro('');setSucesso('');setMode(m);setModal(true)};
  const servicosFront=servicos.map(s=>({...s,name:s.nome,description:s.descricao,price:s.preco,duration_minutes:s.duracao_minutos}));
- if(!pronto)return <LoadingOverlay visible label="Carregando seu espaço…"/>;
  if(page==='dashboard'&&usuario?.papel==='cliente')return <ClientDashboard supabase={supabase} usuario={usuario} servicos={servicosFront} onSair={sair} onInicio={()=>ir('inicio')} onAgendar={()=>ir('agendar','#agendar')} onUsuarioAtualizado={setUsuario} perfilInicial={location.hash==='#dashboard-perfil'}/>;
  if(page==='dashboard'&&usuario)return <TeamDashboard supabase={supabase} usuario={usuario} empresa={empresa} servicos={servicos} onInicio={()=>ir('inicio')} onSair={sair} onUsuarioAtualizado={setUsuario} perfilInicial={location.hash==='#dashboard-perfil'}/>;
  return <><LoadingOverlay visible={busy} label={mode==='login'?'Entrando na sua conta…':'Processando dados…'}/>{page==='agendar'?<Booking supabase={supabase} tenant={{name:empresa?.nome,config_json:empresa?.configuracao_json}} services={servicosFront} user={usuario} onHome={()=>ir('inicio')} onDashboard={()=>ir('dashboard','#dashboard')} onAccount={()=>abrir()} onLogout={sair}/>:<Landing tenant={{name:empresa?.nome||padrao.name,config_json:empresa?.configuracao_json||padrao.configuracao_json||padrao.config_json}} onBook={()=>ir('agendar','#agendar')} onAccount={()=>abrir()} user={usuario&&{name:usuario.nome,role:usuario.papel,photo:usuario.foto_url}} onLogout={sair} onDashboard={()=>ir('dashboard','#dashboard')} onProfile={irPerfil} onBooking={()=>ir('dashboard','#dashboard')}/>} {modal&&<AccountModal mode={mode} setMode={setMode} onClose={()=>setModal(false)} onLogin={d=>autenticar('login',d)} onRegister={d=>autenticar('register',d)} onForgot={recuperarSenha} services={servicos.map(s=>({...s,name:s.nome}))} busy={busy} error={erro} success={sucesso}/>}</>;
