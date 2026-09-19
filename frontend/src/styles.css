@@ -2,3 +2,4 @@
 /* Feedback de sucesso e ações secundárias do formulário de conta. */
 .form-success{margin:14px 0 0;padding:11px;border-radius:9px;background:#d9efdc;color:#216a32;font-weight:700}
 .link-button{justify-self:start;padding:0;border:0;background:none;color:var(--wine);font-weight:800;text-decoration:underline}
+.booking-actions{display:flex;align-items:center;gap:14px}
