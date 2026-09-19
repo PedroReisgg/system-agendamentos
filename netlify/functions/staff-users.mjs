@@ -3,6 +3,13 @@ import { createClient } from '@supabase/supabase-js';
 const resposta=(status,body)=>Response.json(body,{status});
 const numeros=v=>String(v||'').replace(/\D/g,'');
 const papeis=['profissional','caixa','administrador'];
+const mensagemCadastro=erro=>{
+ const texto=String(erro?.message||erro||'erro desconhecido').toLowerCase();
+ if(texto.includes('email')||texto.includes('user already'))return 'Este e-mail já está cadastrado.';
+ if(texto.includes('cpf'))return 'Este CPF já está cadastrado.';
+ if(texto.includes('phone')||texto.includes('telefone'))return 'Este telefone já está cadastrado.';
+ return 'Não foi possível concluir o cadastro. Verifique os dados e tente novamente.';
+};
 
 export default async request=>{
  try{
@@ -30,19 +37,29 @@ export default async request=>{
 
   if(request.method==='POST'){
    const senha=String(dados.senha||'');
-   if(!dadosValidos||senha.length<3)return resposta(422,{error:'Preencha nome, CPF com 11 dígitos, telefone brasileiro, e-mail e senha de ao menos 3 caracteres.'});
+   if(!nome)return resposta(422,{error:'Informe o nome completo do funcionário.'});
+   if(!/^\S+@\S+\.\S+$/.test(email))return resposta(422,{error:'Informe um e-mail válido.'});
+   if(!/^\d{10,11}$/.test(telefone))return resposta(422,{error:'Informe um telefone brasileiro válido com DDD.'});
+   if(!/^\d{11}$/.test(cpf))return resposta(422,{error:'Informe um CPF com 11 dígitos.'});
+   if(senha.length<3)return resposta(422,{error:'A senha deve ter ao menos 3 caracteres.'});
    const{data:empresa,error:erroEmpresa}=await admin.from('empresas').select('id,slug').eq('id',autor.empresa_id).single();
    if(erroEmpresa||!empresa)return resposta(422,{error:'Empresa não encontrada para este usuário.'});
+   const[{data:emailExistente},{data:cpfExistente}]=await Promise.all([
+    admin.from('usuarios').select('id').eq('email',email).maybeSingle(),
+    admin.from('usuarios').select('id').eq('cpf',cpf).maybeSingle()
+   ]);
+   if(emailExistente)return resposta(422,{error:'Este e-mail já está cadastrado.'});
+   if(cpfExistente)return resposta(422,{error:'Este CPF já está cadastrado.'});
    const{data:criado,error:erroCriacao}=await admin.auth.admin.createUser({email,password:senha,email_confirm:true,user_metadata:{nome,telefone,cpf,slug_empresa:empresa.slug}});
-   if(erroCriacao||!criado.user)return resposta(422,{error:erroCriacao?.message||'Não foi possível criar o acesso do funcionário.'});
+   if(erroCriacao||!criado.user)return resposta(422,{error:mensagemCadastro(erroCriacao)});
    const perfil={empresa_id:empresa.id,nome,email,telefone,cpf,genero:'OUTRO',papel,nivel_acesso,cargo,usuario_auth_id:criado.user.id,servicos_favoritos:[]};
    let{data:usuario,error:erroPerfil}=await admin.from('usuarios').select('id').eq('usuario_auth_id',criado.user.id).maybeSingle();
    if(usuario){({data:usuario,error:erroPerfil}=await admin.from('usuarios').update(perfil).eq('id',usuario.id).select('id').single())}
    else({data:usuario,error:erroPerfil}=await admin.from('usuarios').insert(perfil).select('id').single());
-   if(erroPerfil||!usuario){await admin.auth.admin.deleteUser(criado.user.id);return resposta(422,{error:`A conta foi criada, mas o perfil não pôde ser salvo: ${erroPerfil?.message||'erro desconhecido'}`})}
+   if(erroPerfil||!usuario){await admin.auth.admin.deleteUser(criado.user.id);return resposta(422,{error:`A conta foi criada, mas o perfil não pôde ser salvo. ${mensagemCadastro(erroPerfil)}`})}
    if(papel==='profissional'){
     const{data:profissional,error:erroProfissional}=await admin.from('profissionais').select('id').eq('usuario_id',usuario.id).maybeSingle();
-    if(!profissional){const{error}=await admin.from('profissionais').insert({empresa_id:empresa.id,usuario_id:usuario.id,biografia:`${cargo} da equipe.`,ativo:true});if(error)return resposta(422,{error:`A conta foi criada, mas o perfil profissional falhou: ${error.message}`})}
+    if(!profissional){const{error}=await admin.from('profissionais').insert({empresa_id:empresa.id,usuario_id:usuario.id,biografia:`${cargo} da equipe.`,ativo:true});if(error)return resposta(422,{error:'A conta foi criada, mas o perfil profissional não pôde ser criado. Tente novamente.'})}
    }
    return resposta(201,{message:'Funcionário cadastrado e liberado para login.'});
   }
@@ -60,12 +77,12 @@ export default async request=>{
   const atualizacao={email,user_metadata:{nome,telefone,cpf}};
   if(String(dados.senha||'').length>=3)atualizacao.password=String(dados.senha);
   const{error:erroAtualizarAuth}=await admin.auth.admin.updateUserById(alvo.usuario_auth_id,atualizacao);
-  if(erroAtualizarAuth)return resposta(422,{error:erroAtualizarAuth.message});
+  if(erroAtualizarAuth)return resposta(422,{error:mensagemCadastro(erroAtualizarAuth)});
   const{error:erroAtualizar}=await admin.from('usuarios').update({nome,email,telefone,cpf,cargo,papel,nivel_acesso}).eq('id',id);
-  if(erroAtualizar)return resposta(422,{error:erroAtualizar.message});
+  if(erroAtualizar)return resposta(422,{error:mensagemCadastro(erroAtualizar)});
   const{data:profissional}=await admin.from('profissionais').select('id').eq('usuario_id',id).maybeSingle();
   if(papel==='profissional'&&!profissional)await admin.from('profissionais').insert({empresa_id:autor.empresa_id,usuario_id:id,biografia:`${cargo} da equipe.`,ativo:true});
   if(papel!=='profissional'&&profissional)await admin.from('profissionais').delete().eq('id',profissional.id);
   return resposta(200,{message:'Funcionário atualizado com sucesso.'});
- }catch(error){return resposta(500,{error:`Erro interno ao cadastrar funcionário: ${error?.message||'erro desconhecido'}`})}
+ }catch(error){return resposta(500,{error:`Erro interno ao cadastrar funcionário. ${mensagemCadastro(error)}`})}
 };
