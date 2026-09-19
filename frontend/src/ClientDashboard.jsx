@@ -3,12 +3,13 @@ import {mascaraCep,mascaraCpf,mascaraTelefone,somenteDigitos,cpfValido}from'./br
 import {mensagemErro}from'./mensagens';
 import './client-dashboard.css';
 import './client-dashboard-extra.css';
+import './client-dashboard-polish.css';
 
 const Icon=({children})=><span className="dash-icon" aria-hidden="true">{children}</span>;
 const dataFormatada=v=>new Intl.DateTimeFormat('pt-BR',{dateStyle:'medium'}).format(new Date(`${v}T12:00:00`));
 const horario=v=>String(v||'').slice(0,5);
 
-export default function ClientDashboard({supabase,usuario,onSair,onInicio,onAgendar,perfilInicial}){
+export default function ClientDashboard({supabase,usuario,onSair,onInicio,onAgendar,onUsuarioAtualizado,perfilInicial}){
  const[aba,setAba]=useState(perfilInicial?'perfil':'inicio');
  const[agendamentos,setAgendamentos]=useState([]);
  const[perfil,setPerfil]=useState(usuario),[form,setForm]=useState(usuario);
@@ -39,7 +40,7 @@ export default function ClientDashboard({supabase,usuario,onSair,onInicio,onAgen
    if(form.email!==perfil.email){const{error}=await supabase.auth.updateUser({email:form.email});if(error)throw error}
    if(form.novaSenha){if(form.novaSenha.length<8||form.novaSenha!==form.confirmarSenha)throw Error('A senha deve ter ao menos 8 caracteres e a confirmação deve ser igual.');const{error}=await supabase.auth.updateUser({password:form.novaSenha});if(error)throw error}
    const{error}=await supabase.from('usuarios').update({nome:form.nome,email:form.email,telefone:somenteDigitos(form.telefone),cpf:somenteDigitos(form.cpf)||null,data_nascimento:form.data_nascimento||null,cep:somenteDigitos(form.cep)||null,logradouro:form.logradouro||null,numero:form.numero||null,complemento:form.complemento||null,bairro:form.bairro||null,cidade:form.cidade||null,estado:form.estado||null,foto_url:form.foto_url||null}).eq('id',usuario.id);
-   if(error)throw error;setPerfil({...form,telefone:somenteDigitos(form.telefone)});avisar('Alterações salvas com sucesso.');
+   if(error)throw error;const atualizado={...form,telefone:somenteDigitos(form.telefone)};setPerfil(atualizado);onUsuarioAtualizado?.(atualizado);avisar('Alterações salvas com sucesso.');
   }catch(e){avisar(mensagemErro(e),'erro')}finally{setSalvando(false)}
  }
  async function enviarFoto(e){
@@ -47,7 +48,11 @@ export default function ClientDashboard({supabase,usuario,onSair,onInicio,onAgen
   setSalvando(true);const caminho=`${usuario.usuario_auth_id}/${Date.now()}-${arquivo.name.replace(/[^a-zA-Z0-9.]/g,'')}`;
   const{error}=await supabase.storage.from('avatares').upload(caminho,arquivo,{upsert:false});
   if(error){avisar(mensagemErro(error),'erro');setSalvando(false);return}
-  const{data}=supabase.storage.from('avatares').getPublicUrl(caminho);mudar('foto_url',data.publicUrl);setSalvando(false);avisar('Foto pronta para salvar.');
+  const{data}=supabase.storage.from('avatares').getPublicUrl(caminho);
+  const{error:erroPerfil}=await supabase.from('usuarios').update({foto_url:data.publicUrl}).eq('id',usuario.id);
+  setSalvando(false);
+  if(erroPerfil)return avisar(mensagemErro(erroPerfil),'erro');
+  setForm(atual=>({...atual,foto_url:data.publicUrl}));setPerfil(atual=>{const atualizado={...atual,foto_url:data.publicUrl};onUsuarioAtualizado?.(atualizado);return atualizado});avisar('Foto de perfil atualizada com sucesso.');
  }
  async function carregarHorarios(agendamento,data){
   setCarregandoHorarios(true);setHorariosEdicao([]);
