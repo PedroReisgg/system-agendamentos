@@ -13,3 +13,10 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Evita que o navegador conserve um index.html antigo apontando para JavaScript
+# já substituído em um deploy novo.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
